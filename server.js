@@ -22,6 +22,7 @@ const app = express();
 app.use(
   cors({
     origin: [
+      "https://empire-x-nine.vercel.app",
       "https://castle-x.vercel.app",
       "https://castle-x-frontend.vercel.app",
       "http://localhost:5173"
