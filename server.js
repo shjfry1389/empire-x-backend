@@ -316,6 +316,83 @@ app.post(
     }
   }
 );
+app.delete("/api/profile/music", auth, async (req, res) => {
+  try {
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select(
+        "id, role, premium_plan, premium_until, profile_music_url"
+      )
+      .eq("id", req.user.id)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({
+        error: "کاربر پیدا نشد",
+      });
+    }
+
+    const isAdmin = user.role === "admin";
+
+    const isPremium =
+      user.premium_plan === "silver" &&
+      user.premium_until &&
+      new Date(user.premium_until).getTime() > Date.now();
+
+    if (!isAdmin && !isPremium) {
+      return res.status(403).json({
+        error: "این قابلیت فقط برای کاربران Premium و Admin فعال است",
+      });
+    }
+
+    if (!user.profile_music_url) {
+      return res.status(404).json({
+        error: "موسیقی پروفایلی وجود ندارد",
+      });
+    }
+
+    const { error: deleteError } = await supabase.storage
+      .from("profile-music")
+      .remove([user.profile_music_url]);
+
+    if (deleteError) {
+      console.error("PROFILE MUSIC DELETE ERROR:", deleteError);
+
+      return res.status(500).json({
+        error: "خطا در حذف موسیقی",
+        details: deleteError.message,
+      });
+    }
+
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({
+        profile_music_url: null,
+        profile_music_title: null,
+        profile_music_enabled: false,
+      })
+      .eq("id", user.id);
+
+    if (updateError) {
+      return res.status(500).json({
+        error: "خطا در حذف اطلاعات موسیقی",
+        details: updateError.message,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "موسیقی پروفایل حذف شد",
+    });
+  } catch (err) {
+    console.error("PROFILE MUSIC DELETE SERVER ERROR:", err);
+
+    res.status(500).json({
+      error: "خطای سرور",
+      details: err.message,
+    });
+  }
+});
 app.get("/api/profile/music/:username", async (req, res) => {
   try {
     const { username } = req.params;
