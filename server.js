@@ -201,6 +201,174 @@ user: {
   }
 });
 const PORT = process.env.PORT || 5000;
+app.post(
+  "/api/profile/music/upload",
+  auth,
+  upload.single("music"),
+  async (req, res) => {
+    try {
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id, role, premium_plan, premium_until, profile_music_url")
+        .eq("id", req.user.id)
+        .single();
+
+      if (userError || !user) {
+        return res.status(404).json({
+          error: "کاربر پیدا نشد",
+        });
+      }
+
+      const isAdmin = user.role === "admin";
+
+      const isPremium =
+        user.premium_plan &&
+        user.premium_until &&
+        new Date(user.premium_until).getTime() > Date.now();
+
+      if (!isAdmin && !isPremium) {
+        return res.status(403).json({
+          error: "این قابلیت فقط برای کاربران Premium و Admin فعال است",
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          error: "فایل موسیقی انتخاب نشده است",
+        });
+      }
+
+      const allowedTypes = [
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/ogg",
+        "audio/webm",
+        "audio/mp4",
+        "audio/x-m4a",
+      ];
+
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          error: "فرمت فایل موسیقی مجاز نیست",
+        });
+      }
+
+      const extension =
+        req.file.originalname.split(".").pop()?.toLowerCase() || "mp3";
+
+      const filePath = `${user.id}-${Date.now()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile-music")
+        .upload(filePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("PROFILE MUSIC UPLOAD ERROR:", uploadError);
+
+        return res.status(500).json({
+          error: "خطا در آپلود موسیقی",
+          details: uploadError.message,
+        });
+      }
+
+      // حذف فایل قبلی
+      if (user.profile_music_url) {
+        await supabase.storage
+          .from("profile-music")
+          .remove([user.profile_music_url]);
+      }
+
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          profile_music_url: filePath,
+          profile_music_title: req.file.originalname,
+          profile_music_enabled: true,
+        })
+        .eq("id", user.id);
+
+      if (updateError) {
+        return res.status(500).json({
+          error: "خطا در ذخیره اطلاعات موسیقی",
+          details: updateError.message,
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "موسیقی پروفایل با موفقیت آپلود شد",
+        music: {
+          title: req.file.originalname,
+          enabled: true,
+        },
+      });
+    } catch (err) {
+      console.error("PROFILE MUSIC SERVER ERROR:", err);
+
+      res.status(500).json({
+        error: "خطای سرور",
+        details: err.message,
+      });
+    }
+  }
+);
+app.get("/api/profile/music/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select(
+        "id, username, profile_music_url, profile_music_title, profile_music_enabled"
+      )
+      .eq("username", username)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({
+        error: "کاربر پیدا نشد",
+      });
+    }
+
+    if (!user.profile_music_enabled || !user.profile_music_url) {
+      return res.status(404).json({
+        error: "این کاربر موسیقی پروفایل ندارد",
+      });
+    }
+
+    const { data: signedUrl, error: signedUrlError } =
+      await supabase.storage
+        .from("profile-music")
+        .createSignedUrl(user.profile_music_url, 60 * 60);
+
+    if (signedUrlError || !signedUrl) {
+      console.error("PROFILE MUSIC SIGNED URL ERROR:", signedUrlError);
+
+      return res.status(500).json({
+        error: "خطا در دریافت موسیقی",
+      });
+    }
+
+    res.json({
+      success: true,
+      music: {
+        title: user.profile_music_title,
+        url: signedUrl.signedUrl,
+      },
+    });
+  } catch (err) {
+    console.error("PROFILE MUSIC GET ERROR:", err);
+
+    res.status(500).json({
+      error: "خطای سرور",
+      details: err.message,
+    });
+  }
+});
 app.get("/api/admin/dashboard", auth, admin, async (req, res) => {
   res.json({
     success: true,
@@ -750,7 +918,7 @@ app.get("/api/rankings/weekly", auth, async (req, res) => {
       winners.map(async (item, index) => {
         const rank = index + 1;
 
-        const message = `تبریک! شما رتبه ${rank} رتبه‌بندی هفتگی Castle X را به دست آوردید. | ${weekKey}`;
+        const message = `تبریک! شما رتبه ${rank} رتبه‌بندی هفتگی Empire X را به دست آوردید. | ${weekKey}`;
 
         const { data: existingNotification, error: existingError } =
           await supabase
