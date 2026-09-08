@@ -452,6 +452,29 @@ app.get("/api/profile/music/:username", async (req, res) => {
     });
   }
 });
+app.get("/api/test-profile-music", async (req, res) => {
+  try {
+    const { data, error } = await supabase.storage
+      .from("profile-music")
+      .list("", {
+        limit: 100,
+      });
+
+    console.log("PROFILE MUSIC LIST:", data);
+    console.log("PROFILE MUSIC LIST ERROR:", error);
+
+    res.json({
+      files: data,
+      error: error?.message || null,
+    });
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
 app.get("/api/admin/dashboard", auth, admin, async (req, res) => {
   res.json({
     success: true,
