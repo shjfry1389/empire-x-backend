@@ -417,16 +417,67 @@ app.get("/api/profile/music/:username", async (req, res) => {
       });
     }
 
+    // مسیر فایل را تمیز می‌کنیم
+    const filePath = String(user.profile_music_url).trim();
+
+    console.log("PROFILE MUSIC USER:", username);
+    console.log("PROFILE MUSIC PATH:", filePath);
+
+    // بررسی وجود فایل در Storage
+    const folder = filePath.includes("/")
+      ? filePath.substring(0, filePath.lastIndexOf("/"))
+      : "";
+
+    const fileName = filePath.includes("/")
+      ? filePath.substring(filePath.lastIndexOf("/") + 1)
+      : filePath;
+
+    const { data: files, error: listError } = await supabase.storage
+      .from("profile-music")
+      .list(folder, {
+        limit: 100,
+      });
+
+    if (listError) {
+      console.error("PROFILE MUSIC LIST ERROR:", listError);
+
+      return res.status(500).json({
+        error: "خطا در بررسی فایل موسیقی",
+        details: listError.message,
+      });
+    }
+
+    const fileExists = files?.some(
+      (file) => file.name === fileName
+    );
+
+    if (!fileExists) {
+      console.error(
+        "PROFILE MUSIC FILE NOT FOUND:",
+        filePath
+      );
+
+      return res.status(404).json({
+        error: "فایل موسیقی در Storage پیدا نشد",
+        path: filePath,
+      });
+    }
+
+    // ساخت Signed URL
     const { data: signedUrl, error: signedUrlError } =
       await supabase.storage
         .from("profile-music")
-        .createSignedUrl(user.profile_music_url, 60 * 60);
+        .createSignedUrl(filePath, 60 * 60);
 
-    if (signedUrlError || !signedUrl) {
-      console.error("PROFILE MUSIC SIGNED URL ERROR:", signedUrlError);
+    if (signedUrlError || !signedUrl?.signedUrl) {
+      console.error(
+        "PROFILE MUSIC SIGNED URL ERROR:",
+        signedUrlError
+      );
 
       return res.status(500).json({
         error: "خطا در دریافت موسیقی",
+        details: signedUrlError?.message,
       });
     }
 
